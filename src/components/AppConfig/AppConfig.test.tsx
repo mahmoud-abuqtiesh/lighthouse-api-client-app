@@ -119,6 +119,17 @@ describe('Components/AppConfig', () => {
     expect(save).toBeEnabled();
   });
 
+  test('the credential is kept exactly as typed, whitespace and all', async () => {
+    const user = userEvent.setup();
+    renderConfig();
+
+    // Trimming a password would silently alter it, and the only symptom would be
+    // Lighthouse rejecting the credential.
+    await user.type(screen.getByTestId(testIds.appConfig.password), '  pa ss  ');
+
+    expect(screen.getByTestId(testIds.appConfig.password)).toHaveValue('  pa ss  ');
+  });
+
   test('saving is blocked while an endpoint row is half filled in', async () => {
     const user = userEvent.setup();
     renderConfig({ secureJsonFields: { lighthouseUsername: true, lighthousePassword: true } });

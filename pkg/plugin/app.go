@@ -86,19 +86,24 @@ func NewApp(_ context.Context, s backend.AppInstanceSettings) (instancemgmt.Inst
 	return &app, nil
 }
 
-// endpointFor returns the configured Lighthouse URL for a scope, or a message
+// endpointFor returns the configured endpoint for a scope, or a message
 // explaining why that scope cannot be served. An unconfigured pair is a caller
 // error, so no outbound call is ever made for one.
-func (a *App) endpointFor(environment, cell string) (url string, problem string) {
+func (a *App) endpointFor(environment, cell string) (target endpoint, problem string) {
 	if environment == "" || cell == "" {
-		return "", "Both an environment and a cell are required."
+		return endpoint{}, "Both an environment and a cell are required."
 	}
 	for _, e := range a.settings.Endpoints {
 		if e.Environment == environment && e.Cell == cell {
-			return e.URL, ""
+			return e, ""
 		}
 	}
-	return "", fmt.Sprintf("No Lighthouse endpoint is configured for %s/%s.", environment, cell)
+	return endpoint{}, fmt.Sprintf("No Lighthouse endpoint is configured for %s/%s.", environment, cell)
+}
+
+// scope names the Lighthouse this endpoint serves, for messages an operator reads.
+func (e endpoint) scope() string {
+	return fmt.Sprintf("%s/%s", e.Environment, e.Cell)
 }
 
 // Dispose here tells plugin SDK that plugin wants to clean up resources when a new instance
@@ -107,24 +112,11 @@ func (a *App) Dispose() {
 	a.client.CloseIdleConnections()
 }
 
-// CheckHealth handles health checks sent from Grafana to the plugin. It reports
-// on the plugin's own configuration only: Lighthouse need not be reachable for
-// the plugin to be correctly configured.
+// CheckHealth handles health checks sent from Grafana to the plugin. It never
+// calls Lighthouse: an endpoint must be configurable before it is reachable.
 func (a *App) CheckHealth(_ context.Context, _ *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	if len(a.settings.Endpoints) == 0 {
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: "No Lighthouse endpoints are configured.",
-		}, nil
-	}
-	if a.username == "" || a.password == "" {
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: "The shared Lighthouse credential is not set.",
-		}, nil
-	}
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
-		Message: fmt.Sprintf("%d Lighthouse endpoint(s) configured.", len(a.settings.Endpoints)),
+		Message: "ok",
 	}, nil
 }

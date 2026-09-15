@@ -89,14 +89,14 @@ func (a *App) handleInstances(w http.ResponseWriter, req *http.Request) {
 	environment := req.URL.Query().Get("environment")
 	cell := req.URL.Query().Get("cell")
 
-	base, problem := a.endpointFor(environment, cell)
+	target, problem := a.endpointFor(environment, cell)
 	if problem != "" {
 		writeError(w, http.StatusBadRequest, problem)
 		return
 	}
 
-	body, upstream := a.callLighthouse(req.Context(), http.MethodGet, base,
-		"/instances?fields="+instanceFields, nil, environment, cell)
+	body, upstream := a.callLighthouse(req.Context(), http.MethodGet, target,
+		"/instances?fields="+instanceFields, nil)
 	if upstream != nil {
 		writeError(w, upstream.status, upstream.message)
 		return
@@ -105,7 +105,7 @@ func (a *App) handleInstances(w http.ResponseWriter, req *http.Request) {
 	var instances []instance
 	if err := json.Unmarshal(body, &instances); err != nil {
 		writeError(w, http.StatusBadGateway,
-			fmt.Sprintf("Lighthouse for %s/%s returned an instance snapshot we could not read.", environment, cell))
+			fmt.Sprintf("Lighthouse for %s returned an instance snapshot we could not read.", target.scope()))
 		return
 	}
 
@@ -116,15 +116,15 @@ func (a *App) handleInstances(w http.ResponseWriter, req *http.Request) {
 // one structured log line recording the attempt and its outcome.
 func (a *App) handleSetStatus(w http.ResponseWriter, req *http.Request) {
 	var body statusRequest
-	status, message := http.StatusBadRequest,
-		"The request body must be a JSON object with environment, cell, name and status."
+	problem := &upstreamError{http.StatusBadRequest,
+		"The request body must be a JSON object with environment, cell, name and status."}
 	if err := json.NewDecoder(req.Body).Decode(&body); err == nil {
-		status, message = a.setStatus(req.Context(), body)
+		problem = a.setStatus(req.Context(), body)
 	}
 
-	result := "ok"
-	if message != "" {
-		result = message
+	status, result := http.StatusNoContent, "ok"
+	if problem != nil {
+		status, result = problem.status, problem.message
 	}
 	logger := log.DefaultLogger.FromContext(req.Context())
 	fields := []any{
@@ -136,42 +136,40 @@ func (a *App) handleSetStatus(w http.ResponseWriter, req *http.Request) {
 		"statusCode", status,
 		"result", result,
 	}
-	if status == http.StatusNoContent {
+	if problem == nil {
 		logger.Info("Lighthouse instance status change", fields...)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	logger.Error("Lighthouse instance status change failed", fields...)
-	writeError(w, status, message)
+	writeError(w, problem.status, problem.message)
 }
 
 // setStatus validates the request at the plugin's own boundary and, only if it
-// is sound, asks Lighthouse to make the change. It returns the status and
-// message the caller should receive; an empty message means success.
-func (a *App) setStatus(ctx context.Context, r statusRequest) (int, string) {
-	base, problem := a.endpointFor(r.Environment, r.Cell)
+// is sound, asks Lighthouse to make the change. A nil return means success.
+func (a *App) setStatus(ctx context.Context, r statusRequest) *upstreamError {
+	target, problem := a.endpointFor(r.Environment, r.Cell)
 	if problem != "" {
-		return http.StatusBadRequest, problem
+		return &upstreamError{http.StatusBadRequest, problem}
 	}
 	if r.Status != statusActive && r.Status != statusInactive {
-		return http.StatusBadRequest, fmt.Sprintf("Status must be %q or %q.", statusActive, statusInactive)
+		return &upstreamError{http.StatusBadRequest,
+			fmt.Sprintf("Status must be %q or %q.", statusActive, statusInactive)}
 	}
 	if strings.TrimSpace(r.Name) == "" {
-		return http.StatusBadRequest, "An instance name is required."
+		return &upstreamError{http.StatusBadRequest, "An instance name is required."}
 	}
 
 	payload := map[string]any{"names": []string{r.Name}, "status": r.Status}
-	if _, upstream := a.callLighthouse(ctx, http.MethodPut, base, "/instances/status", payload, r.Environment, r.Cell); upstream != nil {
-		return upstream.status, upstream.message
-	}
-	return http.StatusNoContent, ""
+	_, upstream := a.callLighthouse(ctx, http.MethodPut, target, "/instances/status", payload)
+	return upstream
 }
 
 // callLighthouse performs one authenticated call and maps its outcome onto what
 // the plugin answers. The mapping is chosen so an operator can tell the three
 // failure kinds — unreachable, credential rejected, request refused — apart from
 // the message alone.
-func (a *App) callLighthouse(ctx context.Context, method, base, path string, payload any, environment, cell string) ([]byte, *upstreamError) {
+func (a *App) callLighthouse(ctx context.Context, method string, target endpoint, path string, payload any) ([]byte, *upstreamError) {
 	var reqBody io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -181,10 +179,10 @@ func (a *App) callLighthouse(ctx context.Context, method, base, path string, pay
 		reqBody = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(target.URL, "/")+path, reqBody)
 	if err != nil {
 		return nil, &upstreamError{http.StatusBadGateway,
-			fmt.Sprintf("The Lighthouse endpoint configured for %s/%s is not a usable URL.", environment, cell)}
+			fmt.Sprintf("The Lighthouse endpoint configured for %s is not a usable URL.", target.scope())}
 	}
 	req.SetBasicAuth(a.username, a.password)
 	if reqBody != nil {
@@ -198,16 +196,16 @@ func (a *App) callLighthouse(ctx context.Context, method, base, path string, pay
 		// plugin is broken". The underlying error can carry the URL, so it is
 		// logged rather than returned.
 		log.DefaultLogger.FromContext(ctx).Error("Lighthouse unreachable",
-			"environment", environment, "cell", cell, "error", err.Error())
+			"environment", target.Environment, "cell", target.Cell, "error", err.Error())
 		return nil, &upstreamError{http.StatusBadGateway,
-			fmt.Sprintf("Could not reach Lighthouse for %s/%s.", environment, cell)}
+			fmt.Sprintf("Could not reach Lighthouse for %s.", target.scope())}
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes))
 	if err != nil {
 		return nil, &upstreamError{http.StatusBadGateway,
-			fmt.Sprintf("Could not read Lighthouse's reply for %s/%s.", environment, cell)}
+			fmt.Sprintf("Could not read Lighthouse's reply for %s.", target.scope())}
 	}
 
 	switch {
@@ -219,15 +217,15 @@ func (a *App) callLighthouse(ctx context.Context, method, base, path string, pay
 		// route reads to Grafana and to the user as "your session expired", which
 		// is the wrong action to prompt.
 		return nil, &upstreamError{http.StatusBadGateway,
-			fmt.Sprintf("Lighthouse for %s/%s rejected the plugin's credential. Ask a Grafana admin to check the plugin configuration.", environment, cell)}
+			fmt.Sprintf("Lighthouse for %s rejected the plugin's credential. Ask a Grafana admin to check the plugin configuration.", target.scope())}
 
 	case res.StatusCode == http.StatusBadRequest:
 		return nil, &upstreamError{http.StatusBadRequest, lighthouseMessage(body,
-			fmt.Sprintf("Lighthouse for %s/%s rejected the request.", environment, cell))}
+			fmt.Sprintf("Lighthouse for %s rejected the request.", target.scope()))}
 
 	default:
 		return nil, &upstreamError{http.StatusBadGateway, lighthouseMessage(body,
-			fmt.Sprintf("Lighthouse for %s/%s failed with status %d.", environment, cell, res.StatusCode))}
+			fmt.Sprintf("Lighthouse for %s failed with status %d.", target.scope(), res.StatusCode))}
 	}
 }
 

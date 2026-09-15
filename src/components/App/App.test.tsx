@@ -266,6 +266,22 @@ describe('changing the status of one managed instance', () => {
     expect(within(rowFor('mq-audion-2')).getAllByRole('cell')[2]).toHaveTextContent('inactive');
   });
 
+  test('a change whose outcome could not be read says so rather than claiming it is merely pending', async () => {
+    await openStagingMq();
+
+    await user().click(within(rowFor('mq-audion-2')).getByRole('button'));
+    await user().click(screen.getByRole('button', { name: /yes, activate/i }));
+
+    expect(await screen.findByText(/change in flight/i)).toBeInTheDocument();
+
+    // Lighthouse goes away while we are waiting, so we never learn the outcome.
+    instancesFailure = { status: 502, data: { error: 'Could not reach Lighthouse for staging/mq.' } };
+    await jest.advanceTimersByTimeAsync(70_000);
+
+    expect(await screen.findByText(/could not be read while waiting/i)).toBeInTheDocument();
+    expect(screen.queryByText(/has not reached "active" in the instance snapshot yet/i)).not.toBeInTheDocument();
+  });
+
   test('a rejected change surfaces Lighthouse’s own explanation and leaves the real status showing', async () => {
     await openStagingMq();
 
@@ -278,6 +294,27 @@ describe('changing the status of one managed instance', () => {
     expect(within(rowFor('mq-audion-2')).getAllByRole('cell')[2]).toHaveTextContent('inactive');
     // The page stays usable.
     expect(within(rowFor('mq-audion-2')).getByRole('button')).toBeEnabled();
+  });
+});
+
+describe('automatic refresh', () => {
+  test('keeps up with Lighthouse on its own, and stops when the page is left', async () => {
+    const { unmount } = render(<App />);
+    await screen.findByLabelText('Environment');
+    await choose('Environment', 'staging');
+    await choose('Cell', 'mq');
+    await screen.findByText('mq-audion-1');
+
+    const loadsAfterFirstRender = get.mock.calls.filter(([url]) => url.endsWith('/resources/instances')).length;
+
+    await jest.advanceTimersByTimeAsync(35_000);
+    const loadsWhileMounted = get.mock.calls.filter(([url]) => url.endsWith('/resources/instances')).length;
+    expect(loadsWhileMounted).toBeGreaterThan(loadsAfterFirstRender);
+
+    unmount();
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(get.mock.calls.filter(([url]) => url.endsWith('/resources/instances')).length).toBe(loadsWhileMounted);
   });
 });
 

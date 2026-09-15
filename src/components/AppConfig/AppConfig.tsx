@@ -4,12 +4,11 @@ import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import { Button, Field, FieldSet, Input, SecretInput, useStyles2 } from '@grafana/ui';
+import { Scope } from '../../api';
 import { testIds } from '../testIds';
 
 /** One Lighthouse: the scope it serves and where to reach it. */
-type Endpoint = {
-  environment: string;
-  cell: string;
+type Endpoint = Scope & {
   url: string;
 };
 
@@ -64,6 +63,12 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
   const onChange = (event: ChangeEvent<HTMLInputElement>) =>
     setState((current) => ({ ...current, [event.target.name]: event.target.value.trim() }));
+
+  // The credential is stored exactly as typed. Trimming it would silently alter
+  // a password with edge whitespace, and the only symptom would be Lighthouse
+  // rejecting the credential — the misdiagnosis this plugin exists to avoid.
+  const onChangeCredential = (event: ChangeEvent<HTMLInputElement>) =>
+    setState((current) => ({ ...current, [event.target.name]: event.target.value }));
 
   const onChangeEndpoint = (index: number, field: keyof Endpoint) => (event: ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value.trim();
@@ -196,7 +201,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
             value={state.username}
             isConfigured={state.isCredentialSet}
             placeholder="Lighthouse API username"
-            onChange={onChange}
+            onChange={onChangeCredential}
             onReset={onResetCredential}
           />
         </Field>
@@ -210,7 +215,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
             value={state.password}
             isConfigured={state.isCredentialSet}
             placeholder="Lighthouse API password"
-            onChange={onChange}
+            onChange={onChangeCredential}
             onReset={onResetCredential}
           />
         </Field>

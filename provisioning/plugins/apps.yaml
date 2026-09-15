@@ -6,13 +6,16 @@ apps:
     org_name: 'maqsam'
     disabled: false
     jsonData:
-      # One row per Lighthouse scope. These are development defaults only —
-      # the real list is entered on the plugin's configuration page.
+      # Development defaults only — the real list is entered on the plugin's
+      # configuration page. `lighthouse-stub` is not started by
+      # docker-compose.yaml: run your own stub Lighthouse under that name on the
+      # compose network, or change this URL, before expecting the table to load.
       endpoints:
         - environment: staging
           cell: mq
           url: http://lighthouse-stub:4567
       team: root
     secureJsonData:
-      lighthouseUsername: lighthouse
-      lighthousePassword: development-only
+      # Interpolated from the environment; never commit a credential here.
+      lighthouseUsername: $LIGHTHOUSE_API_USERNAME
+      lighthousePassword: $LIGHTHOUSE_API_PASSWORD

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '@emotion/css';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
 import { Alert, Button, ConfirmModal, Field, Select, useStyles2 } from '@grafana/ui';
-import { fetchInstances, Instance, messageOf, Scope, setInstanceStatus, Status } from '../../api';
+import { fetchInstances, Instance, InstanceChange, messageOf, Scope, setInstanceStatus, Status } from '../../api';
 import { testIds } from '../testIds';
 
 /**
@@ -18,11 +18,6 @@ const REFRESH_INTERVAL_MS = 10_000;
  */
 const POLL_INTERVAL_MS = 3_000;
 const POLL_TIMEOUT_MS = 60_000;
-
-type Change = {
-  name: string;
-  status: Status;
-};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -50,8 +45,8 @@ export function InstancesPage({ pairs }: { pairs: Scope[] }) {
   const [loadError, setLoadError] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
-  const [pending, setPending] = useState<Change | undefined>();
-  const [confirming, setConfirming] = useState<Change | undefined>();
+  const [pending, setPending] = useState<InstanceChange | undefined>();
+  const [confirming, setConfirming] = useState<InstanceChange | undefined>();
 
   // Nothing may keep calling Lighthouse from a tab the operator has left.
   const mounted = useRef(true);
@@ -128,19 +123,24 @@ export function InstancesPage({ pairs }: { pairs: Scope[] }) {
     return () => clearInterval(id);
   }, [environment, cell, pending, load]);
 
-  const waitForStatus = async (target: Change) => {
+  // 'unreadable' matters: not being able to read the snapshot is a different
+  // claim from having read it and not seen the change, and saying the second
+  // when the first happened would mislead.
+  const waitForStatus = async (target: InstanceChange): Promise<'observed' | 'pending' | 'unreadable'> => {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
+    let lastReadFailed = false;
     while (mounted.current && Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
       const next = await load();
+      lastReadFailed = next === undefined;
       if (next?.some((i) => i.name === target.name && i.status === target.status)) {
-        return true;
+        return 'observed';
       }
     }
-    return false;
+    return lastReadFailed ? 'unreadable' : 'pending';
   };
 
-  const applyChange = async (target: Change) => {
+  const applyChange = async (target: InstanceChange) => {
     if (!environment || !cell) {
       return;
     }
@@ -161,13 +161,18 @@ export function InstancesPage({ pairs }: { pairs: Scope[] }) {
       return;
     }
 
-    const observed = await waitForStatus(target);
+    const outcome = await waitForStatus(target);
     if (!mounted.current) {
       return;
     }
-    if (!observed) {
+    if (outcome === 'pending') {
       setNotice(
         `Lighthouse accepted the change, but ${target.name} has not reached "${target.status}" in the instance snapshot yet. It may still be pending — refresh to check again.`
+      );
+    }
+    if (outcome === 'unreadable') {
+      setNotice(
+        `Lighthouse accepted the change, but the instance snapshot could not be read while waiting, so whether ${target.name} reached "${target.status}" is unknown. Refresh to check.`
       );
     }
     setPending(undefined);

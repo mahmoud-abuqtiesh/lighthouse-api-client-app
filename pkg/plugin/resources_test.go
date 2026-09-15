@@ -44,6 +44,15 @@ type fakeLighthouse struct {
 	delay  time.Duration
 }
 
+// lighthouseInstanceFields is Lighthouse's own INSTANCE_FIELDS (lighthouse/api.rb).
+// The real API answers 400 "Unknown field: …" for anything outside it, so the
+// fake does too — that is what stops a wrong field name (`dns_present` for
+// `exists`, say) from silently yielding an empty column instead of an error.
+var lighthouseInstanceFields = map[string]bool{
+	"name": true, "status": true, "healthy": true, "private_ip": true,
+	"provider": true, "assembly": true, "succession": true, "exists": true,
+}
+
 func newFakeLighthouse(t *testing.T) *fakeLighthouse {
 	t.Helper()
 	f := &fakeLighthouse{status: http.StatusOK, body: `[]`}
@@ -61,6 +70,17 @@ func newFakeLighthouse(t *testing.T) *fakeLighthouse {
 			time.Sleep(f.delay)
 		}
 		w.Header().Set("Content-Type", "application/json")
+
+		if fields := r.URL.Query().Get("fields"); fields != "" {
+			for _, field := range strings.Split(fields, ",") {
+				if !lighthouseInstanceFields[field] {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"Unknown field: ` + field + `"}`))
+					return
+				}
+			}
+		}
+
 		w.WriteHeader(f.status)
 		if f.body != "" {
 			_, _ = w.Write([]byte(f.body))
@@ -214,7 +234,9 @@ func TestGetInstances(t *testing.T) {
 		t.Errorf("Lighthouse path should be /instances, got %q", lh.lastPath)
 	}
 	// Every field the table displays must be requested; Lighthouse only returns
-	// name, status and healthy by default.
+	// name, status and healthy by default. The fake rejects a field name
+	// Lighthouse does not know, so `exists` being wrong fails here rather than
+	// silently producing an empty "In DNS" column.
 	for _, field := range []string{"name", "status", "healthy", "assembly", "exists"} {
 		if !strings.Contains(lh.lastQuery, field) {
 			t.Errorf("Lighthouse query %q should request field %q", lh.lastQuery, field)
@@ -222,6 +244,20 @@ func TestGetInstances(t *testing.T) {
 	}
 	if lh.lastUser != testUser || lh.lastPass != testPass {
 		t.Errorf("Lighthouse should receive the configured basic auth credential, got %q/%q", lh.lastUser, lh.lastPass)
+	}
+}
+
+// The DNS-presence field is Lighthouse's `exists`. Getting this name wrong
+// would yield an empty column rather than an error, so it is pinned here
+// against Lighthouse's real field list.
+func TestInstanceFieldsAreNamesLighthouseKnows(t *testing.T) {
+	for _, field := range strings.Split(instanceFields, ",") {
+		if !lighthouseInstanceFields[field] {
+			t.Errorf("instanceFields asks Lighthouse for %q, which is not one of its INSTANCE_FIELDS", field)
+		}
+	}
+	if !strings.Contains(instanceFields, "exists") {
+		t.Error("the table's In DNS column reads Lighthouse's `exists` field; it must be requested")
 	}
 }
 
@@ -301,7 +337,9 @@ func TestRejectedBeforeCallingLighthouse(t *testing.T) {
 			body:   `{"environment":"staging","cell":"mq","name":"","status":"inactive"}`,
 		},
 		{
-			name:   "more than one name",
+			// The plugin's wire shape has no room for a batch: `name` is one
+			// string, so a body carrying several names cannot even be decoded.
+			name:   "several names cannot be expressed, let alone sent",
 			method: http.MethodPut,
 			path:   "instances/status",
 			body:   `{"environment":"staging","cell":"mq","name":["mq-cable-1","mq-cable-2"],"status":"inactive"}`,

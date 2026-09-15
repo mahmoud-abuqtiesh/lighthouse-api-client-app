@@ -31,10 +31,13 @@ export type PluginConfig = {
   team: string;
 };
 
-export type StatusChange = Scope & {
+/** The half of a status change that names what to change, without the scope. */
+export type InstanceChange = {
   name: string;
   status: Status;
 };
+
+export type StatusChange = Scope & InstanceChange;
 
 type Team = {
   id: number;
@@ -56,7 +59,9 @@ export const fetchUserTeams = (): Promise<Team[]> => getBackendSrv().get<Team[]>
  * Pulls the human-readable message out of a rejected backend call. The plugin's
  * resource routes always answer a failure with {"error": …}, and that message is
  * the only thing that tells "Lighthouse is down" apart from "the credential was
- * rejected" apart from "Lighthouse refused this request".
+ * rejected" apart from "Lighthouse refused this request". The later fallbacks
+ * are for the calls that do not go through those routes — Grafana's own user
+ * API, and failures that never reached a server at all.
  */
 export function messageOf(e: unknown): string {
   const err = e as { data?: { error?: string; message?: string }; statusText?: string; message?: string } | undefined;

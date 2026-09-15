@@ -1,0 +1,11 @@
+apiVersion: 1
+
+apps:
+  - type: 'maqsam-lighthouse-api-client-app'
+    org_id: 1
+    org_name: 'maqsam'
+    disabled: false
+    jsonData:
+      apiUrl: http://default-url.com
+    secureJsonData:
+      apiKey: secret-key

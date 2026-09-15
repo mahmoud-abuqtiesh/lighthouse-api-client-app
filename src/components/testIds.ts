@@ -1,21 +1,13 @@
 export const testIds = {
   appConfig: {
-    apiKey: 'data-testid ac-api-key',
-    apiUrl: 'data-testid ac-api-url',
+    team: 'data-testid ac-team',
+    username: 'data-testid ac-username',
+    password: 'data-testid ac-password',
+    addEndpoint: 'data-testid ac-add-endpoint',
     submit: 'data-testid ac-submit-form',
   },
-  pageOne: {
-    container: 'data-testid pg-one-container',
-    navigateToFour: 'data-testid navigate-to-four',
-  },
-  pageTwo: {
-    container: 'data-testid pg-two-container',
-  },
-  pageThree: {
-    container: 'data-testid pg-three-container',
-  },
-  pageFour: {
-    container: 'data-testid pg-four-container',
-    navigateBack: 'data-testid navigate-back',
+  instances: {
+    table: 'data-testid instances-table',
+    refresh: 'data-testid instances-refresh',
   },
 };

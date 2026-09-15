@@ -1,50 +1,53 @@
-<!-- This README file is going to be the one displayed on the Grafana.com website for your plugin. Uncomment and replace the content here before publishing.
+# Lighthouse API Client
 
-Remove any remaining comments before publishing as these may be displayed on Grafana.com -->
+Shows the managed instances Lighthouse holds for one Lighthouse scope — an
+environment in a cell — and activates or deactivates one of them at a time,
+without leaving Grafana.
 
-# Lighthouse-Api-Client-App
+## Overview
 
-<!-- To help maximize the impact of your README and improve usability for users, we propose the following loose structure:
+Taking a managed instance out of rotation currently means editing `activation.yml`
+and running an Ansible play, or editing a cloud-provider tag by hand. Both need
+credentials for the cloud account, both are slow, and neither leaves a record an
+operator can point at afterwards. The people who most often need to do it during
+a deploy or an incident are already looking at Grafana.
 
-**BEFORE YOU BEGIN**
-- Ensure all links are absolute URLs so that they will work when the README is displayed within Grafana and Grafana.com
-- Be inspired ✨
-  - [grafana-polystat-panel](https://github.com/grafana/grafana-polystat-panel)
-  - [volkovlabs-variable-panel](https://github.com/volkovlabs/volkovlabs-variable-panel)
+This plugin gives them one page:
 
-**ADD SOME BADGES**
+1. Pick an environment, then a cell. Only the cells configured for that
+   environment are offered, so an unreachable combination cannot be selected.
+2. See every managed instance in that scope — instance, assembly, status, health
+   and whether Lighthouse currently publishes a DNS record for it — refreshed on
+   the Lighthouse reconciliation cadence.
+3. Activate or deactivate exactly one instance, behind a confirmation that names
+   the environment, cell, instance and target status. The page then watches the
+   instance snapshot until the change actually appears.
 
-Badges convey useful information at a glance for users whether in the Catalog or viewing the source code. You can use the generator on [Shields.io](https://shields.io/badges/dynamic-json-badge) together with the Grafana.com API
-to create dynamic badges that update automatically when you publish a new version to the marketplace.
+Status is operator-controlled and distinct from health. Health proves liveness
+only: an instance can be healthy, newly inactive, and still finishing in-flight
+work. Nothing here claims otherwise.
 
-- For the URL parameter use `https://grafana.com/api/plugins/your-plugin-id`.
-- Example queries:
-  - Downloads: `$.downloads`
-  - Catalog Version: `$.version`
-  - Grafana Dependency: `$.grafanaDependency`
-  - Signature Type: `$.versionSignatureType`
-- Optionally, for the logo parameter use `grafana`.
-
-Full example: ![Dynamic JSON Badge](https://img.shields.io/badge/dynamic/json?logo=grafana&query=$.version&url=https://grafana.com/api/plugins/grafana-polystat-panel&label=Marketplace&prefix=v&color=F47A20)
-
-Consider other [badges](https://shields.io/badges) as you feel appropriate for your project.
-
-## Overview / Introduction
-Provide one or more paragraphs as an introduction to your plugin to help users understand why they should use it.
-
-Consider including screenshots:
-- in [plugin.json](https://grafana.com/developers/plugin-tools/reference/plugin-json#info) include them as relative links.
-- in the README ensure they are absolute URLs.
+The browser never talks to Lighthouse. Every call goes through the plugin's Go
+backend, which holds the shared Lighthouse credential. The plugin holds no AWS or
+OCI credentials and contains no AWS or OCI code.
 
 ## Requirements
-List any requirements or dependencies they may need to run the plugin.
 
-## Getting Started
-Provide a quick start on how to configure and use the plugin.
+- Grafana 10.4.15 or later.
+- Network reachability from the Grafana host to each cell's Lighthouse over the
+  private junction route.
+
+## Getting started
+
+A Grafana admin configures the plugin once, on its Configuration page: the list
+of Lighthouse endpoints as environment / cell / URL rows, the Grafana team whose
+members may use the operator page, and the shared Lighthouse credential. New
+cells are added by adding a row — no rebuild and no release.
+
+The operator page then appears as **Managed instances** in the navigation.
 
 ## Documentation
-If your project has dedicated documentation available for users, provide links here. For help in following Grafana's style recommendations for technical documentation, refer to our [Writer's Toolkit](https://grafana.com/docs/writers-toolkit/).
 
-## Contributing
-Do you want folks to contribute to the plugin or provide feedback through specific means? If so, tell them how!
--->
+See the repository README for installation, rollback, the backend's resource
+routes and error mapping, and the plugin's known ceilings — in particular that
+the team gate is a UI gate only and not a security boundary.

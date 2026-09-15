@@ -6,6 +6,13 @@ apps:
     org_name: 'maqsam'
     disabled: false
     jsonData:
-      apiUrl: http://default-url.com
+      # One row per Lighthouse scope. These are development defaults only —
+      # the real list is entered on the plugin's configuration page.
+      endpoints:
+        - environment: staging
+          cell: mq
+          url: http://lighthouse-stub:4567
+      team: root
     secureJsonData:
-      apiKey: secret-key
+      lighthouseUsername: lighthouse
+      lighthousePassword: development-only

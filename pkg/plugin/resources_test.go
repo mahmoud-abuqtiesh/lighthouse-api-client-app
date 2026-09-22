@@ -273,22 +273,20 @@ func TestSetStatus(t *testing.T) {
 		t.Fatalf("status should be 204, got %d (%s)", res.Status, res.Body)
 	}
 
-	if lh.lastMethod != http.MethodPut || lh.lastPath != "/instances/status" {
-		t.Errorf("Lighthouse should receive PUT /instances/status, got %s %s", lh.lastMethod, lh.lastPath)
+	// Lighthouse's write route is per instance: PUT /instances/:name.
+	if lh.lastMethod != http.MethodPut || lh.lastPath != "/instances/mq-cable-1" {
+		t.Errorf("Lighthouse should receive PUT /instances/mq-cable-1, got %s %s", lh.lastMethod, lh.lastPath)
 	}
 
-	var sent struct {
-		Names  []string `json:"names"`
-		Status string   `json:"status"`
-	}
+	var sent map[string]any
 	if err := json.Unmarshal([]byte(lh.lastBody), &sent); err != nil {
 		t.Fatalf("decode body sent to Lighthouse: %s (body %q)", err, lh.lastBody)
 	}
-	if len(sent.Names) != 1 || sent.Names[0] != "mq-cable-1" {
-		t.Errorf("Lighthouse should receive exactly one name, got %+v", sent.Names)
+	if sent["status"] != "inactive" {
+		t.Errorf("Lighthouse should receive status inactive, got %q", sent["status"])
 	}
-	if sent.Status != "inactive" {
-		t.Errorf("Lighthouse should receive status inactive, got %q", sent.Status)
+	if len(sent) != 1 {
+		t.Errorf("Lighthouse's body carries only status, got %+v", sent)
 	}
 }
 

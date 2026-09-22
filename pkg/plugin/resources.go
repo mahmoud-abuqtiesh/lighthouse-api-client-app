@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -160,8 +161,10 @@ func (a *App) setStatus(ctx context.Context, r statusRequest) *upstreamError {
 		return &upstreamError{http.StatusBadRequest, "An instance name is required."}
 	}
 
-	payload := map[string]any{"names": []string{r.Name}, "status": r.Status}
-	_, upstream := a.callLighthouse(ctx, http.MethodPut, target, "/instances/status", payload)
+	// Lighthouse takes one instance per call: PUT /instances/:name {"status": …}.
+	// The single-instance constraint is the API's, not just the plugin's.
+	payload := map[string]any{"status": r.Status}
+	_, upstream := a.callLighthouse(ctx, http.MethodPut, target, "/instances/"+url.PathEscape(r.Name), payload)
 	return upstream
 }
 

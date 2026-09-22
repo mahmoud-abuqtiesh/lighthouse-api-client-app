@@ -267,12 +267,11 @@ save that silently blanks the half the admin did not retype.
 - `PUT /instances/status` with body `{ environment, cell, name, status }` →
   validates the pair, validates `status ∈ {active, inactive}`, validates that
   `name` is a single non-empty string, then sends Lighthouse
-  `{"names": [name], "status": status}`. Success is `204`.
+  `PUT /instances/<name>` with `{"status": status}`. Success is `204`.
 
-The backend accepts one instance name per request. The Lighthouse API accepts an
-array, but the plugin deliberately does not expose that: the single-instance
-constraint is enforced at the plugin's own boundary, not only in the UI, so that a
-hand-crafted request cannot batch.
+The backend accepts one instance name per request, matching Lighthouse's own
+per-instance write route. The constraint is enforced at the plugin's own
+boundary, not only in the UI, so that a hand-crafted request cannot batch.
 
 **Error mapping**, chosen so that an operator can tell the three failure kinds
 apart from the message alone:
@@ -382,7 +381,7 @@ Cases:
   fake Lighthouse records that it was never contacted.
 - An invalid status, an empty name, and more than one name are each rejected before
   any HTTP call is made.
-- A valid change sends Lighthouse a single-element names array and the requested
+- A valid change sends Lighthouse `PUT /instances/<name>` carrying only the requested
   status, and reports success on `204`.
 - Lighthouse `401` surfaces as `502` with a credential-rejected message, not as
   `401`.

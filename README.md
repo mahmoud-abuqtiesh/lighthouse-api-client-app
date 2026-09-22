@@ -134,7 +134,7 @@ All are under `/api/plugins/maqsam-lighthouse-api-client-app/resources`.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /config`                       | The configured `{environment, cell}` pairs and the team name. Never the credential, never the endpoint URLs.                        |
 | `GET /instances?environment=&cell=` | Validates the pair, then reads that Lighthouse's instance snapshot.                                                                 |
-| `PUT /instances/status`             | Body `{environment, cell, name, status}`. Validates, then sends Lighthouse `{"names": [name], "status": status}`. `204` on success. |
+| `PUT /instances/status`             | Body `{environment, cell, name, status}`. Validates, then sends Lighthouse `PUT /instances/<name>` with `{"status": status}`. `204` on success. |
 
 Error mapping, chosen so the three failure kinds are distinguishable from the
 message alone:
